@@ -1,0 +1,92 @@
+# =========================================================
+#  GraduationProject .gitignore
+#  原則：版控只放原始碼、設定與文件。
+#        大型二進位、資料集影像與影片不進版控（另用雲端硬碟交付）。
+# =========================================================
+
+# ---------- 舊版本庫備份（重建版控時產生，請自行刪除）----------
+.git_backup_*/
+.git_broken_*/
+
+# ---------- 資料集：影片與影像 ----------
+*.MOV
+*.mov
+*.mp4
+*.avi
+*.mkv
+*.jpg
+*.jpeg
+*.png
+*.bmp
+*.gif
+*.JPG
+*.JPEG
+*.PNG
+*.BMP
+*.GIF
+
+# ---------- 實機擷取結果 ----------
+captures/
+
+# ---------- 壓縮檔 ----------
+*.zip
+*.7z
+*.rar
+*.tar
+*.tar.gz
+*.tgz
+
+# ---------- 訓練權重與中間產物（請用雲端硬碟交付）----------
+model_output/
+*.pt
+*.pth
+*.onnx
+*.pb
+*.h5
+
+# ---------- 備份檔 ----------
+*.bak
+*.bak[0-9]*
+*.bak_*
+*~
+*.orig
+
+# ---------- Python ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# ---------- 韌體編譯產物 ----------
+obj_*/
+**/obj_epii_evb_icv30_bdv10/
+*.map
+*.elf
+*.hex
+*.lst
+*.su
+
+# ---------- 執行期日誌與暫存 ----------
+*.log
+uart_dump.txt
+fw.txt
+fw_*.txt
+boot_*.txt
+missing_headers.txt
+missing_sources.txt
+
+# ---------- SDK 內與本專案無關的第三方測試資料（ExecuTorch LLM tokenizer）----------
+# ExecuTorch / PyTorch 推論函式庫：本專案走 TFLM 路徑（tflmtag2209 / tflmtag2412 皆已保留），
+# 這包是 9,304 個檔案 / 150MB 的 LLM tokenizer 程式碼，與手勢辨識無關，不進版控。
+# 需要時可從 Seeed 官方 repo 取回同一路徑。
+Seeed_Grove_Vision_AI_Module_V2/EPII_CM55M_APP_S/library/inference/torchtag1_0_0_u55tag2502/
+
+# ---------- 系統檔 ----------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---------- 停用的巢狀版本庫（原為 SDK 自己的 .git，可改名還原）----------
+_git_disabled_*/

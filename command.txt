@@ -1,0 +1,146 @@
+════════════════════════════════════════════════════════════
+  HimaxWiseEye2 手勢辨識模型部署工具（已修正版）
+════════════════════════════════════════════════════════════
+  專案根目錄: C:\GraduationProject
+  SDK 根目錄: C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2
+  COM 埠:     COM3
+  模型位址:   0x3AB7B000（Flash 完整位址，gesture 模型 Vela 編譯位址）
+              0xB7B000  （xmodem 燒錄偏移位址）
+
+  重要設定確認（每次修改後須重新 make clean + make）
+    common_config.h:
+      #define FRAME_CHECK_DEBUG  0   ← 必須為 0，才能輸出 JPEG 影像
+      #define YOLOV8_OBJECT_DETECTION_FLASH_ADDR  0x3AB7B000
+
+
+════════════════════════════════════════════════════════════
+  Step 1: 複製模型到 model_zoo
+════════════════════════════════════════════════════════════
+  來源: C:\GraduationProject\model_output\weights\best_saved_model\best_int8_vela.tflite
+  目標: C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\model_zoo\tflm_yolov8_od\gesture_yolov8n_96_vela_0xB7B000.tflite
+
+  ┌──────────────────────────────────────────
+  │ copy "C:\GraduationProject\model_output\weights\best_saved_model\best_int8_vela.tflite" "C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\model_zoo\tflm_yolov8_od\gesture_yolov8n_96_vela_0xB7B000.tflite"
+  └──────────────────────────────────────────
+
+
+════════════════════════════════════════════════════════════
+  Step 2: 確認 common_config.h 設定
+════════════════════════════════════════════════════════════
+  檔案路徑:
+  C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\EPII_CM55M_APP_S\app\scenario_app\tflm_yolov8_od\common_config.h
+
+  必須確認以下兩項設定正確：
+    #define FRAME_CHECK_DEBUG  0        ← 0 = 輸出 JPEG；1 = 不輸出（黑畫面）
+    #define YOLOV8_OBJECT_DETECTION_FLASH_ADDR  0x3AB7B000   ← 已正確設定
+
+
+════════════════════════════════════════════════════════════
+  Step 3: 編譯韌體
+════════════════════════════════════════════════════════════
+  工作目錄: C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\EPII_CM55M_APP_S
+  確認 makefile 中 APP_TYPE = tflm_yolov8_od
+
+  ┌──────────────────────────────────────────
+  │ cd C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\EPII_CM55M_APP_S
+  │ make clean
+  │ make
+  └──────────────────────────────────────────
+
+  預期輸出 ELF:
+  C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\EPII_CM55M_APP_S\obj_epii_evb_icv30_bdv10\gnu_epii_evb_WLCSP65\EPII_CM55M_gnu_epii_evb_WLCSP65_s.elf
+
+
+════════════════════════════════════════════════════════════
+  Step 4: 生成韌體映像
+════════════════════════════════════════════════════════════
+  工作目錄: C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\we2_image_gen_local
+
+  ┌──────────────────────────────────────────
+  │ cd C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\we2_image_gen_local
+  │
+  │ copy C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\EPII_CM55M_APP_S\obj_epii_evb_icv30_bdv10\gnu_epii_evb_WLCSP65\EPII_CM55M_gnu_epii_evb_WLCSP65_s.elf .\input_case1_secboot\
+  │
+  │ .\we2_local_image_gen.exe project_case1_blp_wlcsp.json
+  └──────────────────────────────────────────
+
+  預期輸出:
+  C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\we2_image_gen_local\output_case1_sec_wlcsp\output.img
+
+
+════════════════════════════════════════════════════════════
+  Step 5: 燒錄韌體 + 模型
+════════════════════════════════════════════════════════════
+  [!!] 燒錄前請確認：
+     1. 開發板已連接 USB
+     2. 沒有其他程式佔用 COM3（關閉 TeraTerm 等）
+     3. 先執行以下指令，再按開發板按鈕
+
+  按鈕操作（看到 "Please press reset button!!" 後執行）：
+     1. 按住 BOOT 按鈕不放
+     2. 按一下 RST 按鈕（放開）
+     3. 放開 BOOT 按鈕
+
+  ┌──────────────────────────────────────────
+  │ python C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\xmodem\xmodem_send.py --port=COM3 --baudrate=921600 --protocol=xmodem --file=C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\we2_image_gen_local\output_case1_sec_wlcsp\output.img --model="C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\model_zoo\tflm_yolov8_od\gesture_yolov8n_96_vela_0xB7B000.tflite 0xB7B000 0x00000"
+  └──────────────────────────────────────────
+
+  （單行版，直接貼入終端機）：
+  python C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\xmodem\xmodem_send.py --port=COM3 --baudrate=921600 --protocol=xmodem --file=C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\we2_image_gen_local\output_case1_sec_wlcsp\output.img --model="C:\GraduationProject\Seeed_Grove_Vision_AI_Module_V2\model_zoo\tflm_yolov8_od\gesture_yolov8n_96_vela_0xB7B000.tflite 0xB7B000 0x00000"
+
+  位址說明：gesture 模型由 Vela 編譯時指定 offset=0xB7B000
+    → common_config.h 中 YOLOV8_OBJECT_DETECTION_FLASH_ADDR = 0x3AB7B000
+    → xmodem 燒錄位址 = 0xB7B000
+
+  燒錄完成後，按開發板上的 RST 按鈕重啟（不需按 BOOT）。
+
+
+════════════════════════════════════════════════════════════
+  Step 6: PC 端即時預覽
+════════════════════════════════════════════════════════════
+  ┌──────────────────────────────────────────
+  │ python C:\GraduationProject\grove_vision_capture.py --port COM3
+  └──────────────────────────────────────────
+
+  進階選項：
+  ┌──────────────────────────────────────────
+  │ # 顯示原始 JSON（診斷用）
+  │ python C:\GraduationProject\grove_vision_capture.py --port COM3 --debug
+  │
+  │ # 只顯示信心度 ≥ 50% 的框
+  │ python C:\GraduationProject\grove_vision_capture.py --port COM3 --threshold 50
+  │
+  │ # 顯示所有原始 UART 位元組（韌體輸出診斷）
+  │ python C:\GraduationProject\grove_vision_capture.py --port COM3 --raw-debug
+  │
+  │ # 相機解析度 640x480（韌體 2x 降採樣時指定）
+  │ python C:\GraduationProject\grove_vision_capture.py --port COM3 --cam-width 640 --cam-height 480
+  └──────────────────────────────────────────
+
+  操作說明：
+    • 按 Q 或 ESC 退出
+    • 按 S 手動存一幀
+
+
+════════════════════════════════════════════════════════════
+  部署注意事項
+════════════════════════════════════════════════════════════
+  韌體關鍵設定（common_config.h）：
+    FRAME_CHECK_DEBUG = 0              ← 必須為 0，否則黑畫面
+    YOLOV8_OBJECT_DETECTION_FLASH_ADDR = 0x3AB7B000
+    模型輸入解析度: 192 x 192
+    UART 鮑率: 921600
+
+  xmodem 模型燒錄位址對照表：
+    Flash 完整位址 0x3AB7B000 → xmodem 燒錄參數 0xB7B000
+
+  Python 端（grove_vision_capture.py）：
+    支援動態切換傳輸模式（UART/SPI/UART+SPI）
+    UART 模式下，INVOKE 訊息同時包含 boxes + JPEG 影像
+
+  常見問題：
+    1. 畫面全黑       → 確認 FRAME_CHECK_DEBUG = 0，重新 make + 燒錄
+    2. 收不到資料     → 改用 --raw-debug 查看韌體原始輸出
+    3. 框座標偏移     → 加上 --cam-width 640 --cam-height 480
+    4. 燒錄失敗       → 確認 COM3 未被其他程式佔用，重試按鈕步驟
+    5. 推論結果異常   → 確認模型燒錄位址與 common_config.h FLASH_ADDR 一致
