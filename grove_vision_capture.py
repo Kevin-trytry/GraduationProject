@@ -64,6 +64,16 @@ detections_lock    = threading.Lock()
 is_running         = True
 debug_mode         = False
 
+# ─── 電梯樓層輸入（手勢 → 兩位數）──────────────────────────────────────────
+# 狀態機與事件輸出都在獨立模組裡，拿掉 --elevator 就完全不影響原本的流程。
+try:
+    from elevator_input import ElevatorInput, ElevatorConfig
+    from elevator_bus import EventBus, draw_hud
+    _ELEV_OK = True
+except Exception as _e:
+    _ELEV_OK = False
+    _ELEV_ERR = _e
+
 # ─── 手勢標籤（對應 Grove Vision AI V2 官方手勢模型）────────────────────────
 GESTURE_CLASSES = {
     0:  '0',
@@ -633,6 +643,28 @@ def main():
     parser.add_argument('--box-smooth',  type=float, default=0.5,
                         help='框位置指數平滑係數，0=不動 1=完全跟隨最新 (預設 0.5)')
 
+    # ── 電梯樓層輸入 ─────────────────────────────────────────────────────
+    parser.add_argument('--elevator', action='store_true',
+                        help='啟用「手勢→兩位數樓層」輸入狀態機')
+    parser.add_argument('--elev-http', type=int, default=0,
+                        help='開本機 HTTP 介面給模擬器接（例如 8765，0=不開）')
+    parser.add_argument('--elev-dwell', type=float, default=3.0,
+                        help='一個數字要維持幾秒（預設 3）')
+    parser.add_argument('--elev-trim', type=float, default=0.5,
+                        help='停留視窗掐頭去尾各幾秒（預設 0.5）')
+    parser.add_argument('--elev-gap', type=float, default=0.8,
+                        help='兩位數之間手要離開幾秒（預設 0.8）')
+    parser.add_argument('--elev-confirm', type=float, default=3.0,
+                        help='兩位齊了之後等幾秒送出，期間舉手可取消（預設 3）')
+    parser.add_argument('--elev-agree', type=float, default=0.70,
+                        help='停留視窗內多數決的最低一致比例（預設 0.70）')
+    parser.add_argument('--elev-conf-min', type=float, default=30.0,
+                        help='勝出類別的信心度中位數下限 %%（預設 30）')
+    parser.add_argument('--elev-min-frames', type=int, default=5,
+                        help='停留視窗至少要幾幀（預設 5；低於約 2.5fps 會不夠）')
+    parser.add_argument('--elev-max-floor', type=int, default=99,
+                        help='最高樓層，超過就擋下來要求重輸入（預設 99）')
+
     args = parser.parse_args()
     debug_mode = args.debug
 
@@ -710,6 +742,32 @@ def main():
     # ── 初始化 FrameSaver ──────────────────────────────────────────────────────
     saver = FrameSaver(args.save_dir, save_clean=args.save_clean)
 
+    # ── 電梯輸入：狀態機 + 事件輸出 ──────────────────────────────────────
+    elev = elev_bus = None
+    if args.elevator:
+        if not _ELEV_OK:
+            print(f'[ELEV] 模組載入失敗，已停用：{_ELEV_ERR}')
+        else:
+            elev = ElevatorInput(ElevatorConfig(
+                dwell=args.elev_dwell,
+                trim_head=args.elev_trim, trim_tail=args.elev_trim,
+                min_frames=args.elev_min_frames,
+                agree_ratio=args.elev_agree,
+                conf_min=args.elev_conf_min,
+                conf_floor=args.threshold,
+                gap=args.elev_gap, confirm=args.elev_confirm,
+                max_floor=args.elev_max_floor))
+            elev_bus = EventBus(
+                jsonl_path=os.path.join(saver.save_dir, 'elevator_events.jsonl'),
+                http_port=args.elev_http or None)
+            print(f'[ELEV] 樓層輸入已啟用：停留 {args.elev_dwell}s'
+                  f'（掐頭去尾各 {args.elev_trim}s）'
+                  f'　分隔 {args.elev_gap}s　確認 {args.elev_confirm}s')
+            print(f'[ELEV] 一致度 ≥{args.elev_agree:.0%}　'
+                  f'信心中位數 ≥{args.elev_conf_min:.0f}%　'
+                  f'最少 {args.elev_min_frames} 幀　最高 {args.elev_max_floor}F')
+            print(f'[ELEV] 事件檔：{os.path.join(saver.save_dir, "elevator_events.jsonl")}')
+
     # ── 等待畫面 placeholder ───────────────────────────────────────────────────
     placeholder = np.zeros((480, 640, 3), dtype=np.uint8)
     cv2.putText(placeholder, 'Waiting for HimaxWE2...', (100, 220),
@@ -780,6 +838,16 @@ def main():
             with detections_lock:
                 dets_snapshot = list(current_detections)
 
+            # ── 電梯輸入：吃未投票的原始偵測 ─────────────────────────────
+            # 投票器已經做過 5 幀平滑，狀態機自己還要做 2 秒多數決，
+            # 疊兩層會把真實的穩定度糊掉，所以這裡用原始結果。
+            elev_snap = None
+            if elev is not None:
+                _now = time.monotonic()
+                _evs = elev.update(_now, dets_snapshot)
+                elev_snap = elev.snapshot(_now)
+                elev_bus.publish(_evs, elev_snap)
+
             # ── 多幀投票：壓掉單幀跳動 ────────────────────────────────────────
             if voter is not None:
                 dets_snapshot = voter.update(dets_snapshot)
@@ -849,6 +917,10 @@ def main():
                         (10, 52), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                         (0, 220, 220), 1)
 
+            # ── 電梯輸入狀態（左下角）────────────────────────────────────
+            if elev_snap is not None:
+                draw_hud(display, elev_snap, cv2)
+
             mode_txt = 'CX,CY mode' if args.use_center else 'XY mode'
             cv2.putText(display, mode_txt, (disp_w - 130, 25),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (180, 180, 180), 1)
@@ -902,6 +974,8 @@ def main():
         print(f'[投票] 原始有偵測 {voter.n_raw} 幀 → 投票後輸出 {voter.n_stable} 幀'
               f'（濾掉 {voter.n_raw - voter.n_stable} 幀不穩定結果）')
     print(f'[結束] 圖片和 log 位於: {os.path.abspath(args.save_dir)}')
+    if elev_bus is not None:
+        elev_bus.close()
     saver.close()
     ser.close()
     cv2.destroyAllWindows()
